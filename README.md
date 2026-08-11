@@ -3,7 +3,9 @@
 Unsupervised battery-fault detection for a fleet of solar-powered IoT devices — no labels
 required to start, no black box once it's running. Every alert is explainable in volts and
 days: *which* rule fired, *which other* rules fired alongside it, and *why* that rule's
-threshold is what it is.
+threshold is what it is. On top of that sits an LLM layer that turns an alert into a field
+briefing for a technician — and every number it writes is audited back against the
+engine's own measurements.
 
 This is a clean-room reimplementation of production fleet-monitoring techniques, rebuilt
 from scratch against a synthetic dataset so the methodology can be shared publicly. The
@@ -104,6 +106,49 @@ demo it reuses the batch engine's channel logic directly (see the module docstri
 duplicate that logic into a fully separate module — a genuine trade-off between DRY-ness and
 isolating an in-flight weekly refactor from an already-running daily job).
 
+## The technician assistant: an LLM that explains, never detects
+
+`technician_assistant.py` turns a detected episode into a field briefing — what is physically
+wrong, what to load into the van, whether to drive out today. It is the only place in the
+repository where a language model is involved, and the boundary is drawn deliberately:
+
+| Layer | Who produces it | What it produces |
+|---|---|---|
+| **Evidence** (`build_evidence`) | Deterministic code | Every number: the voltage that crossed a threshold, the margin, the device's own frozen baseline, the streak length, the silent days |
+| **Briefing** (`brief_episode`) | Claude, structured output | Only *language*: explanation, likely physical cause, recommended action, urgency, parts list |
+| **Audit** (`audit_numbers`) | Deterministic code | Every numeric token in the model's prose, checked back against the evidence packet |
+
+The model is never asked *whether* a device is faulty or *why a channel fired* — the engine
+already computed both, and the reasoning is handed over as finished sentences. Its job is
+translation and field judgement.
+
+**The third row is the point.** A prompt instructing a model not to invent figures is a hope;
+a technician acting on a hallucinated voltage is a wasted truck roll. So every number in the
+output is checked against the packet and unsupported ones are reported as findings:
+
+```
+grounded briefing    -> clean
+fabricated briefing  -> ['13.9', '4.7', '72']
+```
+
+**It runs without an API key.** Missing SDK, missing credentials, API error, or a refusal all
+fall back to `_deterministic_briefing()`, which renders the same four fields from the same
+evidence packet using the channel playbook. A clean checkout produces useful output — clearly
+labelled as the template path — and the daily job never has a hard dependency on an external
+service being reachable.
+
+```
+python src/technician_assistant.py --limit 5     # uses Claude if credentials are available
+python src/technician_assistant.py --offline     # never contacts the API
+```
+
+Two further decisions worth noting: the static half of the prompt (rules plus the channel
+playbook) sits behind a cache breakpoint, so a run over many episodes pays for it once; and
+briefings are issued one request at a time, which suits a daily run over a handful of new
+episodes. A fleet-wide backfill over months of history should use the Message Batches API
+instead — same prompts, half the price — documented rather than implemented, because the
+batch path only pays off at a volume this demo fleet never reaches.
+
 ## Architecture notes
 
 - **Train/Test split for clustering** (`TRAIN_CUTOFF_DAY`), never for the rule engine itself
@@ -126,6 +171,8 @@ src/
   train_pipeline.py             weekly: clustering, decontaminated baselines, 6-channel engine
   daily_inference.py            daily: rolling-window scoring from frozen artifacts
   validate.py                   precision/recall vs. ground truth, before/after decontamination
+  technician_assistant.py       episode -> field briefing (Claude), with a numeric audit
+                                and a deterministic fallback that needs no API key
 data/        generated locally, gitignored
 models/      frozen artifacts (scaler, kmeans, baselines), gitignored
 ```
@@ -138,9 +185,13 @@ models/      frozen artifacts (scaler, kmeans, baselines), gitignored
   trusting this channel's recall number.
 - Fixed cluster count (`N_CLUSTERS = 4`) rather than data-driven selection — reasonable for a
   demo fleet with 4 built-in climate regions, not a general answer.
-- No temperature/humidity safety-limit channel, no LLM-backed technician assistant, no web
-  dashboard — this repo is the detection engine, deliberately scoped to stay reviewable in
-  one sitting rather than reproducing an entire operations platform.
+- No temperature/humidity safety-limit channel and no web dashboard — this repo is the
+  detection engine plus its explanation layer, deliberately scoped to stay reviewable in one
+  sitting rather than reproducing an entire operations platform.
+- The technician assistant's briefings are **not evaluated against technician outcomes** —
+  there is no ground truth here for "was this the right part to bring." The numeric audit
+  proves the briefings are *grounded*, not that the field advice is *correct*; a real
+  deployment would need technicians grading a sample before trusting the urgency labels.
 
 ## License
 

@@ -1,3 +1,7 @@
 numpy>=1.26
 pandas>=2.1
 scikit-learn>=1.4
+
+# Only needed by src/technician_assistant.py. The detection engine itself has no LLM
+# dependency, and the assistant falls back to a deterministic path without this installed.
+anthropic>=0.116
