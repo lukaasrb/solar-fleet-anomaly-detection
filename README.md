@@ -177,21 +177,35 @@ data/        generated locally, gitignored
 models/      frozen artifacts (scaler, kmeans, baselines), gitignored
 ```
 
-## Honest limitations
+## Where this stops, and why
 
-- `RECURRING_SHUTDOWN` recall is the weakest channel (3/6 in the current synthetic run) —
-  its detection window is sensitive to the exact spacing of die/revive cycles. Documented
-  here rather than hidden: a real deployment would need a wider validation sample before
-  trusting this channel's recall number.
-- Fixed cluster count (`N_CLUSTERS = 4`) rather than data-driven selection — reasonable for a
-  demo fleet with 4 built-in climate regions, not a general answer.
-- No temperature/humidity safety-limit channel and no web dashboard — this repo is the
-  detection engine plus its explanation layer, deliberately scoped to stay reviewable in one
-  sitting rather than reproducing an entire operations platform.
-- The technician assistant's briefings are **not evaluated against technician outcomes** —
-  there is no ground truth here for "was this the right part to bring." The numeric audit
-  proves the briefings are *grounded*, not that the field advice is *correct*; a real
-  deployment would need technicians grading a sample before trusting the urgency labels.
+Every number above is reproducible from a clean clone, which means every weakness is too.
+Four are worth stating outright, with what each would actually take to close.
+
+**`RECURRING_SHUTDOWN` catches 3 of its 6 injected episodes** — the weakest channel by a
+clear margin; the next weakest, `UNDERCHARGE`, catches 5 of 7. Its detection window keys on
+the spacing of die/revive cycles, so a device cycling faster or slower than that window slips
+past it. The fix is not a threshold tweak. It needs a wider sample of real cycle geometries
+before the window is worth tuning at all — and manufacturing that sample synthetically would
+only prove the channel can find what it was shaped to find.
+
+**Cluster count is fixed at `N_CLUSTERS = 4`, not chosen from the data.** It matches the four
+climate regions the generator builds in, which makes it correct for this fleet and useless as
+a general answer. A real deployment wants silhouette or gap-statistic selection. It is absent
+here for a specific reason: a demo that ships its own ground truth would be picking *k*
+against data whose structure it already knows, which proves nothing.
+
+**No thermal/humidity safety channel, no dashboard.** This is the detection engine plus its
+explanation layer, scoped to stay readable in one sitting rather than reproducing an
+operations platform. Both fields are already in the telemetry schema — what is missing is
+scope, not difficulty.
+
+**The briefings are not graded against field outcomes.** The numeric audit establishes that
+they are *grounded*: no figure reaches a technician that the engine did not measure. It
+establishes nothing about whether "bring a charge controller" was the right call, and no
+synthetic fleet can — there is no ground truth for what a technician found on site. Before
+the urgency labels are trusted operationally, a deployment needs technicians scoring a sample
+of real briefings against what the repair actually turned out to be.
 
 ## License
 
