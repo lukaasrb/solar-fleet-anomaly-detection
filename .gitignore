@@ -1,0 +1,6 @@
+data/
+models/
+__pycache__/
+*.pyc
+.DS_Store
+UPWORK_BLURB.md
